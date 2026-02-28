@@ -1,4 +1,4 @@
-// MainForm.cs — System tray icon, alert display, and process list GUI v1.13.0
+// MainForm.cs — System tray icon, alert display, and process list GUI v1.13.1
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -7,7 +7,7 @@ namespace RamWatchdog;
 public sealed class MainForm : Form
 {
     private static readonly string AppVersion =
-        typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "1.13.0";
+        typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "1.13.1";
 
     private static readonly TimeSpan AlertCooldown = TimeSpan.FromMinutes(5);
 
@@ -93,6 +93,7 @@ public sealed class MainForm : Form
         _config = Config.Load();
         _monitor = new MemoryMonitor();
         ApplyConfigSettings();
+        CleanStaleAutoStartEntries();
 
         // ── Window setup ──
         Text = $"RAM Watchdog v{AppVersion}";
@@ -633,6 +634,34 @@ public sealed class MainForm : Form
         Dialogs.ShowHelp(this, _monitor);
 
     // ── Auto-start (registry HKCU\Run) ──
+
+    /// <summary>Removes auto-start entries pointing to RamWatchdog.exe at a different path than the current exe.</summary>
+    private static void CleanStaleAutoStartEntries()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(AutoStartKey, true);
+            if (key is null) return;
+
+            string currentExe = Environment.ProcessPath ?? Application.ExecutablePath;
+            foreach (string name in key.GetValueNames())
+            {
+                if (key.GetValue(name) is not string value) continue;
+
+                // Strip surrounding quotes (registry stores paths as "C:\path\to\exe")
+                string path = value.Trim('"');
+
+                // Check if this entry points to any RamWatchdog.exe
+                if (!Path.GetFileName(path).Equals("RamWatchdog.exe", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                // Delete if it points to a different location than the currently running exe
+                if (!path.Equals(currentExe, StringComparison.OrdinalIgnoreCase))
+                    key.DeleteValue(name, false);
+            }
+        }
+        catch { } // silent — same pattern as other registry ops
+    }
 
     private static bool IsAutoStartEnabled()
     {

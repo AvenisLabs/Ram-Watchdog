@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>1.13.0</Version>
+    <Version>1.13.1</Version>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <AssemblyName>RamWatchdog</AssemblyName>
     <RootNamespace>RamWatchdog</RootNamespace>

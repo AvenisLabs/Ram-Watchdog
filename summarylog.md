@@ -248,3 +248,19 @@
 - Issue 8 (markdown pipe escaping): NTFS prohibits `|` in filenames — not possible on Windows.
 
 **Build:** 0 warnings, 0 errors.
+
+## 2026-02-28 01:51 — Clean Stale Auto-Start Registry Entries (v1.13.1)
+
+**Task:** Prevent stale auto-start entries from launching old copies of RamWatchdog when the user moves the exe to a new folder.
+
+**Changes:**
+
+`MainForm.cs` (v1.13.0 → v1.13.1):
+- Added `CleanStaleAutoStartEntries()` — enumerates all values under `HKCU\...\Run`, finds entries whose data references `RamWatchdog.exe` (case-insensitive) at a path different from the currently running exe, and deletes them
+- Strips surrounding quotes before path comparison (registry stores paths as `"C:\path\to\exe"`)
+- Called once at startup in constructor, right after `ApplyConfigSettings()` and before UI setup
+- Silently swallows exceptions — same pattern as other registry operations
+
+`RamWatchdog.csproj`: Version 1.13.0 → 1.13.1
+
+**Build:** 0 warnings, 0 errors.
