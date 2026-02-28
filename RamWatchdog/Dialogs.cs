@@ -1,4 +1,4 @@
-// Dialogs.cs — Settings, Help, and Manage Ignored dialog builders v1.2.0
+// Dialogs.cs — Settings, Help, and Manage Ignored dialog builders v1.3.0
 namespace RamWatchdog;
 
 /// <summary>
@@ -74,7 +74,7 @@ internal static class Dialogs
 
         using var dialog = new Form
         {
-            Text = "Settings", Size = new Size(380, 460),
+            Text = "Settings", Size = new Size(380, 540),
             StartPosition = FormStartPosition.CenterParent,
             FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false
         };
@@ -184,6 +184,42 @@ internal static class Dialogs
         };
         floorPanel.Controls.AddRange([tbFloor, lblFloorUnit, lblFloorHint]);
 
+        // ── System RAM Usage Alert section ──
+        var sysUsageLabel = new Label
+        {
+            Text = "System RAM Usage Alert", Dock = DockStyle.Top, Height = 22,
+            ForeColor = MainForm.AccentGreen, Font = MainForm.FontSemibold,
+            Padding = new Padding(10, 4, 0, 0)
+        };
+        var sysUsagePanel = new Panel { Dock = DockStyle.Top, Height = 50 };
+
+        var cbSysUsage = new CheckBox
+        {
+            Text = "Alert when total RAM usage exceeds:",
+            Checked = config.SystemUsageThresholdPercent > 0,
+            Location = new Point(10, 4), AutoSize = true,
+            ForeColor = MainForm.FgBright, Font = MainForm.FontNormal
+        };
+        var tbSysUsage = new TextBox
+        {
+            Text = (config.SystemUsageThresholdPercent > 0 ? config.SystemUsageThresholdPercent : 90).ToString(),
+            Location = new Point(280, 3), Width = 45, Enabled = cbSysUsage.Checked
+        };
+        StyleTextBox(tbSysUsage);
+        var lblSysUsageUnit = new Label
+        {
+            Text = "%", Location = new Point(328, 6), AutoSize = true,
+            ForeColor = MainForm.FgBright, Font = MainForm.FontNormal
+        };
+        var lblSysUsageHint = new Label
+        {
+            Text = "Alerts when total system RAM in use hits this % (default 90%)",
+            Location = new Point(10, 28), AutoSize = true,
+            ForeColor = Color.FromArgb(140, 140, 140), Font = new Font("Segoe UI", 8f)
+        };
+        cbSysUsage.CheckedChanged += (_, _) => tbSysUsage.Enabled = cbSysUsage.Checked;
+        sysUsagePanel.Controls.AddRange([cbSysUsage, tbSysUsage, lblSysUsageUnit, lblSysUsageHint]);
+
         // ── Notifications section ──
         var notifLabel = new Label
         {
@@ -258,6 +294,18 @@ internal static class Dialogs
             { MessageBox.Show("Enter a display floor between 0.01 and 64 GB.", "Invalid", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
             config.DisplayFloorGB = Math.Abs(floor - 0.5) < 0.001 ? 0 : floor; // 0.5 is the default, store 0
 
+            // Validate system usage threshold
+            if (cbSysUsage.Checked)
+            {
+                if (!int.TryParse(tbSysUsage.Text, out int sysPct) || sysPct < 1 || sysPct > 99)
+                { MessageBox.Show("Enter a system usage percent between 1 and 99.", "Invalid", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
+                config.SystemUsageThresholdPercent = sysPct;
+            }
+            else
+            {
+                config.SystemUsageThresholdPercent = 0;
+            }
+
             config.NotificationsEnabled = cbNotif.Checked;
             config.Save();
             settingsChanged = true;
@@ -271,6 +319,7 @@ internal static class Dialogs
             config.ThresholdGB = 0;
             config.ThresholdPercent = 0;
             config.DisplayFloorGB = 0;
+            config.SystemUsageThresholdPercent = 90;
             config.NotificationsEnabled = true;
             config.Save();
             settingsChanged = true;
@@ -288,6 +337,8 @@ internal static class Dialogs
         dialog.Controls.Add(updatesLabel);
         dialog.Controls.Add(notifPanel);
         dialog.Controls.Add(notifLabel);
+        dialog.Controls.Add(sysUsagePanel);
+        dialog.Controls.Add(sysUsageLabel);
         dialog.Controls.Add(floorPanel);
         dialog.Controls.Add(floorLabel);
         dialog.Controls.Add(thresholdPanel);
@@ -300,6 +351,8 @@ internal static class Dialogs
         thresholdPanel.BringToFront();
         floorLabel.BringToFront();
         floorPanel.BringToFront();
+        sysUsageLabel.BringToFront();
+        sysUsagePanel.BringToFront();
         notifLabel.BringToFront();
         notifPanel.BringToFront();
         updatesLabel.BringToFront();
@@ -336,22 +389,23 @@ internal static class Dialogs
             Text = $@"RAM WATCHDOG — Lightweight Memory Monitor
 
 WHAT IT DOES
-Monitors all running processes every 2 seconds and alerts you when any single process (or group of same-named processes) uses too much RAM. Designed to catch memory leaks before they crash your system.
+Monitors all running processes every 2 seconds and alerts you when any single process (or group of same-named processes) uses too much RAM, or when total system RAM usage exceeds a configurable threshold. Designed to catch memory leaks before they crash your system.
 
 HOW IT WORKS
 - Polls Process.WorkingSet64 (physical RAM only, not pagefile)
 - Groups processes by name (e.g. all chrome.exe instances)
 - Shows processes using {monitor.DisplayFloorMB:F0} MB or more (configurable in Settings)
 - Shows a dark toast popup at bottom-right when a process exceeds the alert threshold
+- Also alerts when total system RAM usage exceeds a set % (default 90%, configurable in Settings)
 - Toast auto-dismisses after 10 seconds, or click it to open the main window
 - Re-alerts every 5 minutes if still over threshold
-- Tray icon turns red when any process is over threshold, green when clear
+- Tray icon turns red when any process is over threshold or system RAM is high, green when clear
 
 BUTTONS
 - Silence Alerts: Suppresses all toast notifications (toggle)
 - Ignore Selected: Click a process, then this button to permanently skip it
 - Manage Ignored: View/remove entries from the ignore list
-- Settings: Configure threshold, display floor, notifications, and check for updates
+- Settings: Configure per-process threshold, system RAM usage alert, display floor, notifications, and check for updates
 - Save Report: Export the current process list as a Markdown file
 - ?: You're reading it!
 - Shutdown: Fully exit the application
@@ -359,7 +413,7 @@ BUTTONS
 COLOR CODING
 - Green (top row): Highest memory consumer
 - Red: Process exceeding the alert threshold
-- Red tray icon: At least one process is over threshold
+- Red tray icon: At least one process is over threshold or system RAM usage is high
 - Gray: Ignored process
 
 SYSTEM TRAY
@@ -377,6 +431,7 @@ CONFIG
 - Settings saved to: %APPDATA%\RamWatchdog\config.json
 - Reports saved to: Documents\RamWatchDog\
 - Toast notifications can be disabled in Settings
+- System RAM usage alert threshold configurable in Settings (default 90%)
 - Check for updates link in Settings opens the GitHub releases page"
         };
 

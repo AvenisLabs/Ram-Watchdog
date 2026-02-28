@@ -1,4 +1,4 @@
-// MemoryMonitor.cs — Process memory enumeration and threshold logic v1.3.0
+// MemoryMonitor.cs — Process memory enumeration and threshold logic v1.4.0
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -32,6 +32,7 @@ public sealed class MemoryMonitor : IDisposable
     private readonly long _totalPhysicalRam;
     private long _thresholdBytes;
     private long _displayFloorBytes = DefaultDisplayFloorBytes;
+    private uint _currentMemoryLoadPercent;
     private bool _disposed;
 
     /// <summary>Fires each poll cycle with the current list of high-memory processes.</summary>
@@ -79,6 +80,9 @@ public sealed class MemoryMonitor : IDisposable
 
     public long DisplayFloorBytes => _displayFloorBytes;
 
+    /// <summary>Current system-wide RAM usage percentage (0-100), updated each poll cycle.</summary>
+    public uint CurrentMemoryLoadPercent => _currentMemoryLoadPercent;
+
     private void Poll(object? state)
     {
         try
@@ -98,6 +102,11 @@ public sealed class MemoryMonitor : IDisposable
     /// </summary>
     private List<ProcessMemoryInfo> BuildSnapshot()
     {
+        // Update system-wide RAM usage percentage
+        var memStatus = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
+        if (GlobalMemoryStatusEx(ref memStatus))
+            _currentMemoryLoadPercent = memStatus.dwMemoryLoad;
+
         var processes = Process.GetProcesses();
         var grouped = new Dictionary<string, (long bytes, int count)>(StringComparer.OrdinalIgnoreCase);
 

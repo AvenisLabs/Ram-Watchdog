@@ -76,3 +76,72 @@
 - Published single EXE, committed, pushed, and created GitHub release v1.10.0
 
 **Build:** 0 warnings, 0 errors.
+
+## 2026-02-28 00:55 — Security & Code Quality Review
+
+**Task:** Comprehensive security audit and code quality review of all 8 source files.
+
+**Output:** `docs/security_review_2026-02-28_00-55-33.md`
+
+**Findings Summary:**
+- **0 Critical, 2 High, 8 Medium, 9 Low, 3 Info** across security, resource leaks, threading, error handling, and code quality
+- **Top 3 actionable issues:**
+  1. RACE-01: `_lastAlertTimes` Dictionary accessed from both timer and UI threads without synchronization — use `ConcurrentDictionary` or move `CheckAlerts` into `BeginInvoke`
+  2. LEAK-01: `GetHicon()` HICON handles never freed with `DestroyIcon` in `LoadAppIcon()` and `CreateAlertIcon()` — bounded leak (2 handles at startup)
+  3. SEC-03: Non-atomic config file writes — crash mid-write could corrupt `config.json`
+- No critical security vulnerabilities (no RCE, no injection vectors, no privilege escalation)
+- P/Invoke usage is safe (standard system DLLs only, proper marshaling)
+- Registry usage is HKCU-scoped with properly quoted paths
+
+## 2026-02-28 00:58 — System RAM Usage Alert (v1.11.0)
+
+**Task:** Add system-wide RAM usage percentage threshold as a separate alert from per-process thresholds.
+
+**Changes:**
+
+`MemoryMonitor.cs` (v1.3.0 → v1.4.0):
+- Added `CurrentMemoryLoadPercent` property (uint, 0-100) updated each poll via `GlobalMemoryStatusEx.dwMemoryLoad`
+- Queries system memory status at the start of each `BuildSnapshot()` call
+
+`Config.cs` (v1.8.1 → v1.9.0):
+- Added `SystemUsageThresholdPercent` property (int, default 90, 0 = disabled)
+
+`ToastNotification.cs` (v1.0.1 → v1.1.0):
+- Refactored to use generic `_title`/`_detail` strings instead of process-specific fields
+- Added `ShowToast(string title, string detail, Action)` overload for system-wide alerts
+- Per-process `ShowToast(MainForm, ProcessMemoryInfo, Action)` now delegates to the string overload
+
+`MainForm.cs` (v1.10.0 → v1.11.0):
+- Added `CheckSystemUsageAlert()` — fires toast when `CurrentMemoryLoadPercent >= SystemUsageThresholdPercent` with 5-min cooldown
+- Tray icon flash now also turns red when system usage exceeds threshold
+- Info label shows system threshold when enabled (e.g. "Sys: 90%")
+
+`Dialogs.cs` (v1.2.0 → v1.3.0):
+- Added "System RAM Usage Alert" section: checkbox + textbox (1-99%), hint text, enabled/disabled toggle
+- Apply validates 1-99 range; Reset All restores to 90%
+- Dialog height 460 → 540
+
+`RamWatchdog.csproj`: Version 1.10.0 → 1.11.0
+
+**Update (01:01):** Updated all documentation for system RAM usage alert feature.
+- `README.md`: Updated description, features (added system RAM usage alert + updated tray icon flash), config table (added system usage threshold row), architecture table (updated descriptions for MemoryMonitor, MainForm, Dialogs, ToastNotification)
+- `CLAUDE.md`: Updated Config, MemoryMonitor, MainForm, Dialogs, ToastNotification descriptions; updated P/Invoke section; added system usage threshold to Key Conventions
+- `Dialogs.cs` Help text: Updated "WHAT IT DOES", "HOW IT WORKS" (system alert, tray icon), "BUTTONS" (Settings description), "COLOR CODING" (red tray icon), "CONFIG" (system usage threshold)
+
+**Build:** 0 warnings, 0 errors.
+
+## 2026-02-28 01:00 — Security Review Updated for v1.11.0
+
+**Task:** Update `docs/security_review_2026-02-28_00-55-33.md` to cover v1.11.0 system-wide RAM alert changes.
+
+**Changes to report:**
+- Updated version header from v1.10.0 → v1.11.0
+- Updated summary table: Resource Leaks Medium 2→3, Threading Medium 2→3
+- SEC-02: Added `SystemUsageThresholdPercent` to unvalidated config fields list
+- LEAK-02: Now covers 2 font leaks in Settings (floor hint + system usage hint)
+- RACE-01: Added `CheckSystemUsageAlert()` as second timer-thread access path to `_lastAlertTimes`
+- Added RACE-03: New `_currentMemoryLoadPercent` cross-thread uint access without memory barrier
+- Renumbered former RACE-03 → RACE-04 for `_latestSnapshot`
+- Updated all line number references to match v1.11.0 source
+- Added remediation priority entry for RACE-03
+- Added v1.11.0 Change Impact appendix with file-by-file delta table

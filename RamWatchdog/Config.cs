@@ -1,4 +1,4 @@
-// Config.cs — Settings persistence for RamWatchdog v1.8.1
+// Config.cs — Settings persistence for RamWatchdog v1.9.0
 using System.Text.Json;
 
 namespace RamWatchdog;
@@ -33,6 +33,9 @@ public sealed class Config
 
     /// <summary>Master toggle for toast notifications. When false, no toasts fire (tray icon flash still works).</summary>
     public bool NotificationsEnabled { get; set; } = true;
+
+    /// <summary>System-wide RAM usage alert threshold (1-99%). 0 = disabled. Default 90.</summary>
+    public int SystemUsageThresholdPercent { get; set; } = 90;
 
     public static Config Load()
     {

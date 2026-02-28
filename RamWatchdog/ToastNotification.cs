@@ -1,9 +1,10 @@
-// ToastNotification.cs — Custom dark-themed toast popup for RAM alerts v1.0.1
+// ToastNotification.cs — Custom dark-themed toast popup for RAM alerts v1.1.0
 namespace RamWatchdog;
 
 /// <summary>
 /// Borderless dark popup that appears at bottom-right of the screen.
 /// Replaces Windows balloon tips which may be suppressed by OS settings.
+/// Supports both per-process alerts and system-wide RAM usage alerts.
 /// </summary>
 internal sealed class ToastNotification : Form
 {
@@ -35,39 +36,42 @@ internal sealed class ToastNotification : Form
         _dismissTimer.Tick += (_, _) => DismissToast();
     }
 
-    private string _processName = "";
-    private string _memoryText = "";
-    private string _instanceText = "";
+    private string _title = "";
+    private string _detail = "";
+    private Action? _showWindowCallback;
 
     /// <summary>
     /// Shows a toast notification for a high-memory process.
     /// If a toast is already visible, replaces its content.
     /// </summary>
-    /// <param name="owner">MainForm instance (used for ShowWindow callback).</param>
-    /// <param name="proc">Process info to display.</param>
-    /// <param name="showWindowCallback">Action to invoke when the toast is clicked.</param>
     internal static void ShowToast(MainForm owner, ProcessMemoryInfo proc, Action showWindowCallback)
+    {
+        string detail = $"{proc.Name}  —  {proc.MemoryGB:F1} GB  ({proc.ProcessCount} instance{(proc.ProcessCount > 1 ? "s" : "")})";
+        ShowToast("RAM Watchdog — High Memory", detail, showWindowCallback);
+    }
+
+    /// <summary>
+    /// Shows a toast notification with a custom title and detail message.
+    /// Used for system-wide RAM usage alerts.
+    /// </summary>
+    internal static void ShowToast(string title, string detail, Action showWindowCallback)
     {
         if (_current != null && !_current.IsDisposed)
         {
-            // Reuse existing toast — update content and restart timer
-            _current.UpdateContent(proc, showWindowCallback);
+            _current.UpdateContent(title, detail, showWindowCallback);
             return;
         }
 
         var toast = new ToastNotification();
-        toast.UpdateContent(proc, showWindowCallback);
+        toast.UpdateContent(title, detail, showWindowCallback);
         _current = toast;
         toast.Show();
     }
 
-    private Action? _showWindowCallback;
-
-    private void UpdateContent(ProcessMemoryInfo proc, Action showWindowCallback)
+    private void UpdateContent(string title, string detail, Action showWindowCallback)
     {
-        _processName = proc.Name;
-        _memoryText = $"{proc.MemoryGB:F1} GB";
-        _instanceText = $"{proc.ProcessCount} instance{(proc.ProcessCount > 1 ? "s" : "")}";
+        _title = title;
+        _detail = detail;
         _showWindowCallback = showWindowCallback;
 
         Invalidate(); // trigger repaint with new content
@@ -92,13 +96,12 @@ internal sealed class ToastNotification : Form
 
         // Title
         using var titleFont = new Font("Segoe UI Semibold", 10f);
-        g.DrawString("RAM Watchdog — High Memory", titleFont, Brushes.White, 12, 8);
+        g.DrawString(_title, titleFont, Brushes.White, 12, 8);
 
-        // Process details
-        string detail = $"{_processName}  —  {_memoryText}  ({_instanceText})";
+        // Detail
         using var detailFont = new Font("Segoe UI", 9f);
         using var detailBrush = new SolidBrush(MainForm.AlertRed);
-        g.DrawString(detail, detailFont, detailBrush, 12, 34);
+        g.DrawString(_detail, detailFont, detailBrush, 12, 34);
 
         // Hint text
         using var hintFont = new Font("Segoe UI", 7.5f);

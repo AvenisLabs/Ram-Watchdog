@@ -1,4 +1,4 @@
-// MainForm.cs — System tray icon, alert display, and process list GUI v1.10.0
+// MainForm.cs — System tray icon, alert display, and process list GUI v1.11.0
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -81,6 +81,7 @@ public sealed class MainForm : Form
     private readonly Icon _alertIcon;
 
     private readonly Dictionary<string, DateTime> _lastAlertTimes = new(StringComparer.OrdinalIgnoreCase);
+    private const string SystemUsageAlertKey = "__SYSTEM_USAGE__";
     private List<ProcessMemoryInfo> _latestSnapshot = [];
 
     public MainForm()
@@ -281,7 +282,10 @@ public sealed class MainForm : Form
             mode = $"{_config.ThresholdPercent:F0}%";
         else
             mode = "auto";
-        _infoLabel.Text = $"Alert: {_monitor.ThresholdGB:F1} GB ({mode})  |  Show: >= {_monitor.DisplayFloorGB:G3} GB  |  RAM: {_monitor.TotalPhysicalRamGB:F1} GB";
+        string sysUsage = _config.SystemUsageThresholdPercent > 0
+            ? $"  |  Sys: {_config.SystemUsageThresholdPercent}%"
+            : "";
+        _infoLabel.Text = $"Alert: {_monitor.ThresholdGB:F1} GB ({mode})  |  Show: >= {_monitor.DisplayFloorGB:G3} GB  |  RAM: {_monitor.TotalPhysicalRamGB:F1} GB{sysUsage}";
     }
 
     // ── ListView owner-draw ──
@@ -370,7 +374,10 @@ public sealed class MainForm : Form
         _latestSnapshot = snapshot;
 
         if (_config.NotificationsEnabled && !_config.AlertsSilenced)
+        {
             CheckAlerts(snapshot);
+            CheckSystemUsageAlert();
+        }
 
         string tooltip = snapshot.Count > 0
             ? $"Top: {snapshot[0].Name} — {snapshot[0].MemoryGB:F1} GB"
@@ -395,6 +402,29 @@ public sealed class MainForm : Form
             _lastAlertTimes[proc.Name] = now;
             FireAlert(proc);
         }
+    }
+
+    /// <summary>Checks if system-wide RAM usage exceeds the configured threshold.</summary>
+    private void CheckSystemUsageAlert()
+    {
+        if (_config.SystemUsageThresholdPercent <= 0) return;
+
+        uint currentLoad = _monitor.CurrentMemoryLoadPercent;
+        if (currentLoad < _config.SystemUsageThresholdPercent) return;
+
+        var now = DateTime.UtcNow;
+        if (_lastAlertTimes.TryGetValue(SystemUsageAlertKey, out var last) && (now - last) < AlertCooldown)
+            return;
+        _lastAlertTimes[SystemUsageAlertKey] = now;
+
+        if (IsDisposed || !IsHandleCreated) return;
+        BeginInvoke(() =>
+        {
+            ToastNotification.ShowToast(
+                "RAM Watchdog — System RAM High",
+                $"Total RAM usage: {currentLoad}%  (threshold: {_config.SystemUsageThresholdPercent}%)",
+                ShowWindow);
+        });
     }
 
     private void FireAlert(ProcessMemoryInfo proc)
@@ -449,9 +479,11 @@ public sealed class MainForm : Form
         }
         _listView.EndUpdate();
 
-        // Flash tray icon red if any non-ignored process exceeds threshold
+        // Flash tray icon red if any process exceeds threshold or system RAM usage is high
         bool anyOverThreshold = snapshot.Any(p => p.ExceedsThreshold && !_config.IsIgnored(p.Name));
-        _trayIcon.Icon = anyOverThreshold ? _alertIcon : _appIcon;
+        bool systemOverThreshold = _config.SystemUsageThresholdPercent > 0
+            && _monitor.CurrentMemoryLoadPercent >= _config.SystemUsageThresholdPercent;
+        _trayIcon.Icon = (anyOverThreshold || systemOverThreshold) ? _alertIcon : _appIcon;
     }
 
     // ── Button handlers ──

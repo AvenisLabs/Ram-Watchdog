@@ -1,13 +1,14 @@
 # RAM Watchdog
 
-Lightweight system tray memory monitor for Windows. Polls all running processes every 2 seconds and alerts you when any single process (or group of same-named processes) uses too much RAM. Designed to catch memory leaks before they crash your system.
+Lightweight system tray memory monitor for Windows. Polls all running processes every 2 seconds and alerts you when any single process (or group of same-named processes) uses too much RAM, or when total system RAM usage exceeds a configurable threshold. Designed to catch memory leaks before they crash your system.
 
 ## Features
 
 - **Real-time monitoring** — polls `Process.WorkingSet64` every 2 seconds, groups by process name
-- **Configurable alerts** — threshold by fixed GB or percentage of total RAM, with 5-minute cooldown per process
+- **Per-process alerts** — threshold by fixed GB or percentage of total RAM, with 5-minute cooldown per process
+- **System RAM usage alert** — fires when total system RAM in use exceeds a configurable percentage (default 90%), independent of per-process thresholds
 - **Custom toast notifications** — dark-themed popup at bottom-right of screen; auto-dismisses after 10 seconds, click to open main window. Re-alerts every 5 minutes until silenced or ignored. Can be disabled in Settings.
-- **Tray icon flash** — tray icon turns red when any process exceeds the threshold, returns to green when clear
+- **Tray icon flash** — tray icon turns red when any process exceeds the threshold or system RAM usage is high, returns to green when clear
 - **Ignore list** — permanently skip known-heavy processes from triggering alerts
 - **Display floor** — only show processes above a configurable minimum (default 500 MB)
 - **Markdown reports** — export the current process list as a formatted `.md` file
@@ -52,7 +53,8 @@ Settings are persisted to `%APPDATA%\RamWatchdog\config.json` and include:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Alert threshold | min(16 GB, 30% of RAM) | Trigger point for alerts — configurable as fixed GB or % |
+| Alert threshold | min(16 GB, 30% of RAM) | Per-process trigger point — configurable as fixed GB or % |
+| System usage threshold | 90% | Alert when total system RAM in use exceeds this % (0 = disabled) |
 | Display floor | 0.5 GB (500 MB) | Minimum memory to show a process in the list |
 | Ignored processes | (none) | Processes that never trigger alerts |
 | Alerts silenced | false | Suppress all toast notifications (quick toggle) |
@@ -68,11 +70,11 @@ Eight-file SRP design:
 |------|---------------|
 | `Program.cs` | Entry point + single-instance mutex guard |
 | `Config.cs` | JSON persistence to `%APPDATA%` |
-| `MemoryMonitor.cs` | Polling engine, process enumeration, threshold logic |
-| `MainForm.cs` | System tray, ListView, alerts, report saving, tray icon flash |
-| `Dialogs.cs` | Settings, Help, and Manage Ignored dialogs |
+| `MemoryMonitor.cs` | Polling engine, process enumeration, threshold logic, system RAM usage % |
+| `MainForm.cs` | System tray, ListView, per-process & system usage alerts, report saving, tray icon flash |
+| `Dialogs.cs` | Settings (threshold, system usage, floor, notifications, updates), Help, Manage Ignored |
 | `DarkControls.cs` | Dark-themed ListView, header, and menu controls |
-| `ToastNotification.cs` | Custom dark toast popup for RAM alerts |
+| `ToastNotification.cs` | Custom dark toast popup for per-process and system-wide RAM alerts |
 | `AlertIcon.cs` | Red alert icon generator for tray icon flash |
 
 ## License
