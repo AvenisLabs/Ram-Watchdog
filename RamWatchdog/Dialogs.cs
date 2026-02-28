@@ -1,4 +1,4 @@
-// Dialogs.cs — Settings, Help, and Manage Ignored dialog builders v1.0.0
+// Dialogs.cs — Settings, Help, and Manage Ignored dialog builders v1.2.0
 namespace RamWatchdog;
 
 /// <summary>
@@ -74,7 +74,7 @@ internal static class Dialogs
 
         using var dialog = new Form
         {
-            Text = "Settings", Size = new Size(380, 340),
+            Text = "Settings", Size = new Size(380, 460),
             StartPosition = FormStartPosition.CenterParent,
             FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false
         };
@@ -184,6 +184,48 @@ internal static class Dialogs
         };
         floorPanel.Controls.AddRange([tbFloor, lblFloorUnit, lblFloorHint]);
 
+        // ── Notifications section ──
+        var notifLabel = new Label
+        {
+            Text = "Notifications", Dock = DockStyle.Top, Height = 22,
+            ForeColor = MainForm.AccentGreen, Font = MainForm.FontSemibold,
+            Padding = new Padding(10, 4, 0, 0)
+        };
+        var notifPanel = new Panel { Dock = DockStyle.Top, Height = 30 };
+
+        var cbNotif = new CheckBox
+        {
+            Text = "Enable toast notifications", Checked = config.NotificationsEnabled,
+            Location = new Point(10, 4), AutoSize = true,
+            ForeColor = MainForm.FgBright, Font = MainForm.FontNormal
+        };
+        notifPanel.Controls.Add(cbNotif);
+
+        // ── Updates section ──
+        var updatesLabel = new Label
+        {
+            Text = "Updates", Dock = DockStyle.Top, Height = 22,
+            ForeColor = MainForm.AccentGreen, Font = MainForm.FontSemibold,
+            Padding = new Padding(10, 4, 0, 0)
+        };
+        var updatesPanel = new Panel { Dock = DockStyle.Top, Height = 30 };
+
+        var releasesLink = new LinkLabel
+        {
+            Text = "Check for updates on GitHub",
+            Location = new Point(10, 4), AutoSize = true,
+            Font = MainForm.FontNormal,
+            LinkColor = MainForm.AccentGreen,
+            ActiveLinkColor = MainForm.FgBright,
+            VisitedLinkColor = MainForm.AccentGreen
+        };
+        releasesLink.LinkClicked += (_, _) =>
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://github.com/AvenisLabs/Ram-Watchdog/releases") { UseShellExecute = true }); }
+            catch { }
+        };
+        updatesPanel.Controls.Add(releasesLink);
+
         // ── Buttons ──
         var btnPanel = new FlowLayoutPanel
         {
@@ -216,6 +258,7 @@ internal static class Dialogs
             { MessageBox.Show("Enter a display floor between 0.01 and 64 GB.", "Invalid", MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
             config.DisplayFloorGB = Math.Abs(floor - 0.5) < 0.001 ? 0 : floor; // 0.5 is the default, store 0
 
+            config.NotificationsEnabled = cbNotif.Checked;
             config.Save();
             settingsChanged = true;
             dialog.Close();
@@ -228,6 +271,7 @@ internal static class Dialogs
             config.ThresholdGB = 0;
             config.ThresholdPercent = 0;
             config.DisplayFloorGB = 0;
+            config.NotificationsEnabled = true;
             config.Save();
             settingsChanged = true;
             dialog.Close();
@@ -240,6 +284,10 @@ internal static class Dialogs
         btnPanel.Controls.AddRange([applyBtn, resetBtn, cancelBtn]);
 
         // Dock order: bottom-up stacking (last added at top)
+        dialog.Controls.Add(updatesPanel);
+        dialog.Controls.Add(updatesLabel);
+        dialog.Controls.Add(notifPanel);
+        dialog.Controls.Add(notifLabel);
         dialog.Controls.Add(floorPanel);
         dialog.Controls.Add(floorLabel);
         dialog.Controls.Add(thresholdPanel);
@@ -252,6 +300,10 @@ internal static class Dialogs
         thresholdPanel.BringToFront();
         floorLabel.BringToFront();
         floorPanel.BringToFront();
+        notifLabel.BringToFront();
+        notifPanel.BringToFront();
+        updatesLabel.BringToFront();
+        updatesPanel.BringToFront();
         dialog.ShowDialog(owner);
 
         return settingsChanged;
@@ -290,14 +342,16 @@ HOW IT WORKS
 - Polls Process.WorkingSet64 (physical RAM only, not pagefile)
 - Groups processes by name (e.g. all chrome.exe instances)
 - Shows processes using {monitor.DisplayFloorMB:F0} MB or more (configurable in Settings)
-- Fires a sound + balloon notification when a process exceeds the alert threshold
+- Shows a dark toast popup at bottom-right when a process exceeds the alert threshold
+- Toast auto-dismisses after 10 seconds, or click it to open the main window
 - Re-alerts every 5 minutes if still over threshold
+- Tray icon turns red when any process is over threshold, green when clear
 
 BUTTONS
-- Silence Alerts: Suppresses all sound/balloon alerts (toggle)
+- Silence Alerts: Suppresses all toast notifications (toggle)
 - Ignore Selected: Click a process, then this button to permanently skip it
 - Manage Ignored: View/remove entries from the ignore list
-- Settings: Configure alert threshold (GB or %) and display floor (minimum RAM to show)
+- Settings: Configure threshold, display floor, notifications, and check for updates
 - Save Report: Export the current process list as a Markdown file
 - ?: You're reading it!
 - Shutdown: Fully exit the application
@@ -305,6 +359,7 @@ BUTTONS
 COLOR CODING
 - Green (top row): Highest memory consumer
 - Red: Process exceeding the alert threshold
+- Red tray icon: At least one process is over threshold
 - Gray: Ignored process
 
 SYSTEM TRAY
@@ -312,6 +367,7 @@ SYSTEM TRAY
 - Double-click the tray icon to show the window
 - Right-click for context menu (Show, Silence, Auto-start, Exit)
 - Closing the window hides to tray — use Exit or Shutdown to quit
+- Icon turns red when alerts are active, green when all clear
 
 AUTO-START
 - Right-click the tray icon and toggle 'Start with Windows'
@@ -319,7 +375,9 @@ AUTO-START
 
 CONFIG
 - Settings saved to: %APPDATA%\RamWatchdog\config.json
-- Reports saved to: Documents\RamWatchDog\"
+- Reports saved to: Documents\RamWatchDog\
+- Toast notifications can be disabled in Settings
+- Check for updates link in Settings opens the GitHub releases page"
         };
 
         var closeBtn = new Button { Text = "Got it", Dock = DockStyle.Bottom, Height = 35 };

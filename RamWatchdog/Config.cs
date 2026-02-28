@@ -1,4 +1,4 @@
-// Config.cs — Settings persistence for RamWatchdog v1.8.0
+// Config.cs — Settings persistence for RamWatchdog v1.8.1
 using System.Text.Json;
 
 namespace RamWatchdog;
@@ -30,6 +30,9 @@ public sealed class Config
 
     /// <summary>Display floor in GB. 0 = default (0.5 GB / 500 MB).</summary>
     public double DisplayFloorGB { get; set; }
+
+    /// <summary>Master toggle for toast notifications. When false, no toasts fire (tray icon flash still works).</summary>
+    public bool NotificationsEnabled { get; set; } = true;
 
     public static Config Load()
     {

@@ -1,5 +1,4 @@
-// MainForm.cs — System tray icon, alert display, and process list GUI v1.9.0
-using System.Media;
+// MainForm.cs — System tray icon, alert display, and process list GUI v1.10.0
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -18,7 +17,7 @@ public sealed class MainForm : Form
     internal static readonly Color FgBright     = Color.White;
     private  static readonly Color NeonGreen    = Color.FromArgb(57, 255, 20);
     internal static readonly Color AccentGreen  = Color.FromArgb(78, 201, 110);
-    private  static readonly Color AlertRed     = Color.FromArgb(255, 80, 80);
+    internal static readonly Color AlertRed     = Color.FromArgb(255, 80, 80);
     private  static readonly Color AlertRedBg   = Color.FromArgb(50, 15, 15);
     internal static readonly Color BorderColor  = Color.FromArgb(50, 50, 50);
     internal static readonly Color HelpYellow   = Color.FromArgb(255, 255, 50);
@@ -79,6 +78,7 @@ public sealed class MainForm : Form
     private readonly ToolStripMenuItem _silenceMenuItem;
     private readonly ToolStripMenuItem _autoStartMenuItem;
     private readonly Icon _appIcon;
+    private readonly Icon _alertIcon;
 
     private readonly Dictionary<string, DateTime> _lastAlertTimes = new(StringComparer.OrdinalIgnoreCase);
     private List<ProcessMemoryInfo> _latestSnapshot = [];
@@ -100,6 +100,7 @@ public sealed class MainForm : Form
         ForeColor = FgBright;
         DoubleBuffered = true;
         _appIcon = LoadAppIcon();
+        _alertIcon = AlertIcon.CreateAlertIcon();
         Icon = _appIcon;
 
         // ── Info label (threshold + floor + RAM) ──
@@ -368,7 +369,7 @@ public sealed class MainForm : Form
     {
         _latestSnapshot = snapshot;
 
-        if (!_config.AlertsSilenced)
+        if (_config.NotificationsEnabled && !_config.AlertsSilenced)
             CheckAlerts(snapshot);
 
         string tooltip = snapshot.Count > 0
@@ -398,17 +399,13 @@ public sealed class MainForm : Form
 
     private void FireAlert(ProcessMemoryInfo proc)
     {
-        try
+        if (IsDisposed || !IsHandleCreated) return;
+
+        // Marshal toast to UI thread so form creation works correctly
+        BeginInvoke(() =>
         {
-            SystemSounds.Exclamation.Play();
-            if (!IsDisposed && IsHandleCreated)
-            {
-                BeginInvoke(() => _trayIcon.ShowBalloonTip(5000, "RAM Watchdog — High Memory",
-                    $"{proc.Name} is using {proc.MemoryGB:F1} GB ({proc.ProcessCount} instance{(proc.ProcessCount > 1 ? "s" : "")})",
-                    ToolTipIcon.Warning));
-            }
-        }
-        catch { }
+            ToastNotification.ShowToast(this, proc, ShowWindow);
+        });
     }
 
     private void UpdateListView(List<ProcessMemoryInfo> snapshot)
@@ -451,6 +448,10 @@ public sealed class MainForm : Form
             isFirst = false;
         }
         _listView.EndUpdate();
+
+        // Flash tray icon red if any non-ignored process exceeds threshold
+        bool anyOverThreshold = snapshot.Any(p => p.ExceedsThreshold && !_config.IsIgnored(p.Name));
+        _trayIcon.Icon = anyOverThreshold ? _alertIcon : _appIcon;
     }
 
     // ── Button handlers ──
