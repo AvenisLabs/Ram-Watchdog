@@ -77,4 +77,4 @@ Eight-file SRP design:
 
 ## License
 
-This project is provided as-is for personal use.
+Non-commercial use only. Provided as-is with no warranties. See [LICENSE](LICENSE) for details.
