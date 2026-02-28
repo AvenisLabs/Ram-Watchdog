@@ -1,4 +1,4 @@
-// Config.cs — Settings persistence for RamWatchdog v1.9.0
+// Config.cs — Settings persistence for RamWatchdog v1.10.1
 using System.Text.Json;
 
 namespace RamWatchdog;
@@ -45,7 +45,9 @@ public sealed class Config
         try
         {
             string json = File.ReadAllText(ConfigPath);
-            return JsonSerializer.Deserialize<Config>(json, JsonOpts) ?? new Config();
+            var config = JsonSerializer.Deserialize<Config>(json, JsonOpts) ?? new Config();
+            config.Validate();
+            return config;
         }
         catch
         {
@@ -53,11 +55,33 @@ public sealed class Config
         }
     }
 
+    /// <summary>Clamps deserialized values to safe ranges to guard against tampered config files.</summary>
+    private void Validate()
+    {
+        if (ThresholdGB < 0 || ThresholdGB > 128) ThresholdGB = 0;
+        if (ThresholdPercent < 0 || ThresholdPercent > 90) ThresholdPercent = 0;
+        if (DisplayFloorGB < 0 || DisplayFloorGB > 64) DisplayFloorGB = 0;
+        if (SystemUsageThresholdPercent < 0 || SystemUsageThresholdPercent > 99)
+            SystemUsageThresholdPercent = 90;
+    }
+
     public void Save()
     {
         Directory.CreateDirectory(ConfigDir);
         string json = JsonSerializer.Serialize(this, JsonOpts);
-        File.WriteAllText(ConfigPath, json);
+        // Write to temp file then atomically move to avoid corruption on crash
+        string tempPath = ConfigPath + ".tmp";
+        File.WriteAllText(tempPath, json);
+        try
+        {
+            File.Move(tempPath, ConfigPath, overwrite: true);
+        }
+        catch
+        {
+            // Clean up orphaned temp file on move failure
+            try { File.Delete(tempPath); } catch { }
+            throw;
+        }
     }
 
     public bool IsIgnored(string processName) =>

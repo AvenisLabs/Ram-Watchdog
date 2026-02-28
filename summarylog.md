@@ -145,3 +145,106 @@
 - Updated all line number references to match v1.11.0 source
 - Added remediation priority entry for RACE-03
 - Added v1.11.0 Change Impact appendix with file-by-file delta table
+
+## 2026-02-28 01:16 — Security & Code Quality Remediation (v1.12.0)
+
+**Task:** Remediate all actionable issues from the security review (`docs/security_review_2026-02-28_00-55-33.md`). 14 issues fixed across 7 files, plus 1 additional issue found during validation.
+
+**Changes by file:**
+
+`MainForm.cs` (v1.11.0 → v1.12.0):
+- RACE-01: Moved `CheckAlerts()` and `CheckSystemUsageAlert()` inside `BeginInvoke` callback — all `_lastAlertTimes` access now on UI thread. Removed redundant `BeginInvoke` from `CheckSystemUsageAlert()` and `FireAlert()`.
+- LEAK-01: Added `DestroyIcon` P/Invoke (`internal static`). `LoadAppIcon()` now properly frees HICON handle after cloning.
+- RACE-04: Marked `_latestSnapshot` as `volatile`.
+- QUAL-01: Updated version fallback from `"1.6.0"` to `"1.12.0"`.
+- QUAL-03: Added `PruneAlertTimes()` method — removes expired cooldown entries for processes no longer in snapshot. Called each poll cycle from BeginInvoke callback.
+- LEAK-04: `Dispose(bool)` wraps tray icon access in try/catch to guard against double-dispose from `ExitApp()`.
+
+`MemoryMonitor.cs` (v1.4.0 → v1.5.0):
+- RACE-02: `SetThreshold()` and `SetDisplayFloor()` use `Interlocked.Exchange`; all reads of `_thresholdBytes`/`_displayFloorBytes` use `Interlocked.Read`. `BuildSnapshot()` snapshots both values locally for consistent comparison.
+- RACE-03: `_currentMemoryLoadPercent` uses `Volatile.Write` in `BuildSnapshot()` and `Volatile.Read` in property getter.
+- ERR-03: `Poll()` returns early if `_disposed` is true.
+
+`Config.cs` (v1.9.0 → v1.10.0):
+- SEC-03: `Save()` writes to `.tmp` file then uses `File.Move(overwrite: true)` for atomic writes.
+- SEC-02: Added `Validate()` method called after deserialization — clamps ThresholdGB, ThresholdPercent, DisplayFloorGB, SystemUsageThresholdPercent to safe ranges.
+
+`Dialogs.cs` (v1.3.0 → v1.4.0):
+- LEAK-02/03: Added cached `FontHint` (8pt) and `FontHelp` (9.5pt) static fields. Replaced 3 inline `new Font(...)` allocations.
+
+`AlertIcon.cs` (v1.0.0 → v1.0.1):
+- LEAK-01: `CreateAlertIcon()` now properly frees HICON handle via `MainForm.DestroyIcon()`.
+
+`DarkControls.cs` (v1.0.0 → v1.0.1):
+- NEW: Cached `CheckFont` static field in `DarkMenuRenderer`, replacing per-render `new Font(...)` allocation in `OnRenderItemCheck`.
+
+`RamWatchdog.csproj` (1.11.0 → 1.12.0):
+- BUILD-01: Added `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>`.
+- Version bump to 1.12.0.
+
+**Build:** 0 warnings, 0 errors (now enforced by TreatWarningsAsErrors).
+
+## 2026-02-28 01:20 — Updated CLAUDE.md with Publish & Release workflow
+
+**Task:** Add build/publish single EXE instructions and GitHub release workflow to CLAUDE.md.
+
+**Changes:**
+- Expanded Build & Run section — noted `TreatWarningsAsErrors` is now enabled in csproj
+- Added new **Publish & Release** section with:
+  - `dotnet publish` command and output path
+  - `gh release create` command with EXE attachment and notes format
+  - `gh release upload --clobber` for updating an existing release
+  - Full 6-step release checklist (version bump → build → publish → commit/tag/push → gh release → summarylog)
+
+## 2026-02-28 01:20 — Production Codebase Audit (Bugs, Security, Performance, Concurrency)
+
+**Task:** Full verified production codebase audit of all 8 source files (~1,600 LOC) following senior-level audit methodology.
+
+**Output:** `docs/Codebase_Audit_2026-02-28_01-20.md`
+
+**Findings Summary: 0 Critical, 0 High, 2 Medium, 6 Low**
+
+**Medium issues:**
+1. **Shutdown race condition** — `ExitApp()` disposes `_trayIcon` then calls `Application.Exit()`, but an in-flight timer callback could have queued a `BeginInvoke` lambda that accesses the disposed tray icon. The `catch (ObjectDisposedException)` only guards the `BeginInvoke` call, not the lambda body. Fix: use `Timer.Dispose(WaitHandle)` to wait for callbacks, or add `_exiting` flag.
+2. **Icon resource leak** — `_appIcon` and `_alertIcon` are never disposed in `Dispose(bool)`. Two HICON handles leaked per app lifetime. Fix: add dispose calls.
+
+**Low issues:** Non-volatile `_disposed` flag (concurrency), swallowed exceptions hiding config corruption (reliability), temp file orphan on save failure, ToastNotification OnPaint GDI allocations, DarkMenuRenderer per-render GDI allocations, markdown report table corruption from unusual process names.
+
+**Positive findings:**
+- No security vulnerabilities (zero network surface, no injection vectors, no privilege escalation)
+- Clean 8-file SRP architecture within line count guidelines
+- Proper thread marshaling via BeginInvoke with appropriate guards
+- Correct P/Invoke usage with proper handle management
+- Atomic config writes via temp+move pattern
+
+**Additional report sections:** Top 5 dangerous issues ranking, technical debt hotspots (dual dispose path, color constant scattering, GDI caching inconsistency), security hardening recommendations, performance optimization opportunities, test coverage gaps (no tests exist).
+
+## 2026-02-28 01:46 — Codebase Audit Remediation (v1.12.0 → v1.13.0)
+
+**Task:** Fix 5 of 8 issues found in `docs/Codebase_Audit_2026-02-28_01-20.md`. 2 issues intentionally deferred, 1 not applicable.
+
+**Changes by file:**
+
+`MainForm.cs` (v1.12.0 → v1.13.0):
+- Issue 1: Added `volatile bool _exiting` flag — set at top of `ExitApp()`, checked as first line in `BeginInvoke` lambda in `OnMonitorSnapshot`. Prevents post-dispose access to `_trayIcon` from in-flight timer callbacks.
+- Issue 2: Added `_appIcon.Dispose()` and `_alertIcon.Dispose()` to `Dispose(bool disposing)` after tray icon cleanup.
+
+`MemoryMonitor.cs` (v1.5.0 → v1.5.1):
+- Issue 3: Changed `private bool _disposed` to `private volatile bool _disposed` for cross-thread visibility.
+
+`ToastNotification.cs` (v1.1.0 → v1.1.1):
+- Issue 6: Cached 3 fonts (`TitleFont`, `DetailFont`, `HintFont`), 3 brushes (`AccentBrush`, `DetailBrush`, `HintBrush`), and 1 pen (`BorderPen`) as `private static readonly` fields. `OnPaint` now uses cached objects instead of per-call allocations.
+
+`DarkControls.cs` (v1.0.1 → v1.0.2):
+- Issue 7: Cached 3 brushes (`BrushMenuBg`, `BrushMenuHover`, `BrushCheckAccent`) and 1 pen (`PenSep`) as `private static readonly` fields. All 4 `DarkMenuRenderer` render methods now use cached objects.
+
+`Config.cs` (v1.10.0 → v1.10.1):
+- Issue 5: `Save()` now wraps `File.Move` in try/catch — deletes orphaned temp file on move failure, then re-throws.
+
+`RamWatchdog.csproj`: Version 1.12.0 → 1.13.0
+
+**Issues not addressed (intentional):**
+- Issue 4 (swallowed exceptions): Intentional design for tray utility scope.
+- Issue 8 (markdown pipe escaping): NTFS prohibits `|` in filenames — not possible on Windows.
+
+**Build:** 0 warnings, 0 errors.

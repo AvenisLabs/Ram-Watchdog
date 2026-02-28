@@ -1,4 +1,4 @@
-// MemoryMonitor.cs — Process memory enumeration and threshold logic v1.4.0
+// MemoryMonitor.cs — Process memory enumeration and threshold logic v1.5.1
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -33,25 +33,25 @@ public sealed class MemoryMonitor : IDisposable
     private long _thresholdBytes;
     private long _displayFloorBytes = DefaultDisplayFloorBytes;
     private uint _currentMemoryLoadPercent;
-    private bool _disposed;
+    private volatile bool _disposed;
 
     /// <summary>Fires each poll cycle with the current list of high-memory processes.</summary>
     public event Action<List<ProcessMemoryInfo>>? OnSnapshot;
 
     public const double OneGBd = 1024.0 * 1024.0 * 1024.0;
 
-    public long ThresholdBytes => _thresholdBytes;
+    public long ThresholdBytes => Interlocked.Read(ref _thresholdBytes);
     public long TotalPhysicalRam => _totalPhysicalRam;
 
     /// <summary>Computes the automatic default threshold for this system.</summary>
     public long DefaultThresholdBytes { get; }
 
     // ── GB convenience properties (eliminates repeated byte-to-GB divisions) ──
-    public double ThresholdGB => _thresholdBytes / OneGBd;
+    public double ThresholdGB => Interlocked.Read(ref _thresholdBytes) / OneGBd;
     public double TotalPhysicalRamGB => _totalPhysicalRam / OneGBd;
     public double DefaultThresholdGB => DefaultThresholdBytes / OneGBd;
-    public double DisplayFloorGB => _displayFloorBytes / OneGBd;
-    public double DisplayFloorMB => _displayFloorBytes / (1024.0 * 1024.0);
+    public double DisplayFloorGB => Interlocked.Read(ref _displayFloorBytes) / OneGBd;
+    public double DisplayFloorMB => Interlocked.Read(ref _displayFloorBytes) / (1024.0 * 1024.0);
 
     public MemoryMonitor()
     {
@@ -69,22 +69,23 @@ public sealed class MemoryMonitor : IDisposable
     /// <summary>Updates the alert threshold at runtime (in bytes).</summary>
     public void SetThreshold(long bytes)
     {
-        _thresholdBytes = bytes;
+        Interlocked.Exchange(ref _thresholdBytes, bytes);
     }
 
     /// <summary>Updates the display floor at runtime (in bytes). Processes below this are hidden.</summary>
     public void SetDisplayFloor(long bytes)
     {
-        _displayFloorBytes = bytes > 0 ? bytes : DefaultDisplayFloorBytes;
+        Interlocked.Exchange(ref _displayFloorBytes, bytes > 0 ? bytes : DefaultDisplayFloorBytes);
     }
 
-    public long DisplayFloorBytes => _displayFloorBytes;
+    public long DisplayFloorBytes => Interlocked.Read(ref _displayFloorBytes);
 
     /// <summary>Current system-wide RAM usage percentage (0-100), updated each poll cycle.</summary>
-    public uint CurrentMemoryLoadPercent => _currentMemoryLoadPercent;
+    public uint CurrentMemoryLoadPercent => Volatile.Read(ref _currentMemoryLoadPercent);
 
     private void Poll(object? state)
     {
+        if (_disposed) return; // timer can fire once more after Dispose
         try
         {
             var snapshot = BuildSnapshot();
@@ -102,10 +103,10 @@ public sealed class MemoryMonitor : IDisposable
     /// </summary>
     private List<ProcessMemoryInfo> BuildSnapshot()
     {
-        // Update system-wide RAM usage percentage
+        // Update system-wide RAM usage percentage (cross-thread read by UI via property)
         var memStatus = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
         if (GlobalMemoryStatusEx(ref memStatus))
-            _currentMemoryLoadPercent = memStatus.dwMemoryLoad;
+            Volatile.Write(ref _currentMemoryLoadPercent, memStatus.dwMemoryLoad);
 
         var processes = Process.GetProcesses();
         var grouped = new Dictionary<string, (long bytes, int count)>(StringComparer.OrdinalIgnoreCase);
@@ -132,12 +133,16 @@ public sealed class MemoryMonitor : IDisposable
             }
         }
 
+        // Snapshot volatile fields once for consistent comparison across all entries
+        long floor = Interlocked.Read(ref _displayFloorBytes);
+        long threshold = Interlocked.Read(ref _thresholdBytes);
+
         var results = new List<ProcessMemoryInfo>();
         foreach (var (name, (bytes, count)) in grouped)
         {
-            if (bytes >= _displayFloorBytes)
+            if (bytes >= floor)
             {
-                results.Add(new ProcessMemoryInfo(name, bytes, count, bytes >= _thresholdBytes));
+                results.Add(new ProcessMemoryInfo(name, bytes, count, bytes >= threshold));
             }
         }
 

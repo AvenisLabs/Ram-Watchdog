@@ -1,4 +1,4 @@
-// Dialogs.cs — Settings, Help, and Manage Ignored dialog builders v1.3.0
+// Dialogs.cs — Settings, Help, and Manage Ignored dialog builders v1.4.0
 namespace RamWatchdog;
 
 /// <summary>
@@ -7,6 +7,10 @@ namespace RamWatchdog;
 /// </summary>
 internal static class Dialogs
 {
+    // Cached fonts for dialogs (avoids per-show allocations that leak GDI handles)
+    private static readonly Font FontHint = new("Segoe UI", 8f);
+    private static readonly Font FontHelp = new("Segoe UI", 9.5f);
+
     private static void StyleDialog(Form dialog)
     {
         dialog.BackColor = MainForm.BgDark;
@@ -180,7 +184,7 @@ internal static class Dialogs
         {
             Text = "e.g. 0.5 = 500 MB, 1.0 = 1 GB, 0.25 = 256 MB",
             Location = new Point(10, 28), AutoSize = true,
-            ForeColor = Color.FromArgb(140, 140, 140), Font = new Font("Segoe UI", 8f)
+            ForeColor = Color.FromArgb(140, 140, 140), Font = FontHint
         };
         floorPanel.Controls.AddRange([tbFloor, lblFloorUnit, lblFloorHint]);
 
@@ -215,7 +219,7 @@ internal static class Dialogs
         {
             Text = "Alerts when total system RAM in use hits this % (default 90%)",
             Location = new Point(10, 28), AutoSize = true,
-            ForeColor = Color.FromArgb(140, 140, 140), Font = new Font("Segoe UI", 8f)
+            ForeColor = Color.FromArgb(140, 140, 140), Font = FontHint
         };
         cbSysUsage.CheckedChanged += (_, _) => tbSysUsage.Enabled = cbSysUsage.Checked;
         sysUsagePanel.Controls.AddRange([cbSysUsage, tbSysUsage, lblSysUsageUnit, lblSysUsageHint]);
@@ -385,7 +389,7 @@ internal static class Dialogs
             BackColor = MainForm.BgDark,
             ForeColor = MainForm.HelpYellow,
             BorderStyle = BorderStyle.None,
-            Font = new Font("Segoe UI", 9.5f),
+            Font = FontHelp,
             Text = $@"RAM WATCHDOG — Lightweight Memory Monitor
 
 WHAT IT DOES

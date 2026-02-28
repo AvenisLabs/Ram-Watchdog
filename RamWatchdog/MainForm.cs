@@ -1,4 +1,4 @@
-// MainForm.cs — System tray icon, alert display, and process list GUI v1.11.0
+// MainForm.cs — System tray icon, alert display, and process list GUI v1.13.0
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 
@@ -7,7 +7,7 @@ namespace RamWatchdog;
 public sealed class MainForm : Form
 {
     private static readonly string AppVersion =
-        typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "1.6.0";
+        typeof(MainForm).Assembly.GetName().Version?.ToString(3) ?? "1.13.0";
 
     private static readonly TimeSpan AlertCooldown = TimeSpan.FromMinutes(5);
 
@@ -61,6 +61,9 @@ public sealed class MainForm : Form
     [DllImport("dwmapi.dll", PreserveSig = true)]
     private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
 
+    [DllImport("user32.dll")]
+    internal static extern bool DestroyIcon(IntPtr hIcon);
+
     private readonly Config _config;
     private readonly MemoryMonitor _monitor;
     private readonly NotifyIcon _trayIcon;
@@ -82,7 +85,8 @@ public sealed class MainForm : Form
 
     private readonly Dictionary<string, DateTime> _lastAlertTimes = new(StringComparer.OrdinalIgnoreCase);
     private const string SystemUsageAlertKey = "__SYSTEM_USAGE__";
-    private List<ProcessMemoryInfo> _latestSnapshot = [];
+    private volatile List<ProcessMemoryInfo> _latestSnapshot = [];
+    private volatile bool _exiting;
 
     public MainForm()
     {
@@ -363,8 +367,11 @@ public sealed class MainForm : Form
         using var font = new Font("Segoe UI", 9f, FontStyle.Bold);
         using var brush = new SolidBrush(Color.White);
         g.DrawString("R", font, brush, 0, 0);
-        var icon = Icon.FromHandle(bmp.GetHicon());
-        return (Icon)icon.Clone(); // clone so icon survives bitmap disposal
+        IntPtr hIcon = bmp.GetHicon();
+        using var tempIcon = Icon.FromHandle(hIcon);
+        var result = (Icon)tempIcon.Clone();
+        DestroyIcon(hIcon); // release the unmanaged HICON handle
+        return result;
     }
 
     // ── Monitor event ──
@@ -373,12 +380,6 @@ public sealed class MainForm : Form
     {
         _latestSnapshot = snapshot;
 
-        if (_config.NotificationsEnabled && !_config.AlertsSilenced)
-        {
-            CheckAlerts(snapshot);
-            CheckSystemUsageAlert();
-        }
-
         string tooltip = snapshot.Count > 0
             ? $"Top: {snapshot[0].Name} — {snapshot[0].MemoryGB:F1} GB"
             : $"No process >= {_monitor.DisplayFloorMB:F0} MB";
@@ -386,7 +387,19 @@ public sealed class MainForm : Form
 
         if (!IsDisposed && IsHandleCreated)
         {
-            try { BeginInvoke(() => { _trayIcon.Text = tooltip; UpdateListView(snapshot); }); }
+            // All _lastAlertTimes access must be on the UI thread to avoid race conditions
+            try { BeginInvoke(() =>
+            {
+                if (_exiting) return; // guard against post-dispose access from in-flight timer callback
+                if (_config.NotificationsEnabled && !_config.AlertsSilenced)
+                {
+                    CheckAlerts(snapshot);
+                    CheckSystemUsageAlert();
+                }
+                PruneAlertTimes(snapshot);
+                _trayIcon.Text = tooltip;
+                UpdateListView(snapshot);
+            }); }
             catch (ObjectDisposedException) { }
         }
     }
@@ -404,7 +417,21 @@ public sealed class MainForm : Form
         }
     }
 
-    /// <summary>Checks if system-wide RAM usage exceeds the configured threshold.</summary>
+    /// <summary>Removes expired cooldown entries for processes no longer in the snapshot.</summary>
+    private void PruneAlertTimes(List<ProcessMemoryInfo> snapshot)
+    {
+        if (_lastAlertTimes.Count == 0) return;
+        var now = DateTime.UtcNow;
+        var activeNames = new HashSet<string>(snapshot.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
+        // Keep system usage key and any process still in the snapshot
+        var stale = _lastAlertTimes.Keys
+            .Where(k => k != SystemUsageAlertKey && !activeNames.Contains(k) && (now - _lastAlertTimes[k]) >= AlertCooldown)
+            .ToList();
+        foreach (var key in stale)
+            _lastAlertTimes.Remove(key);
+    }
+
+    /// <summary>Checks if system-wide RAM usage exceeds the configured threshold. Must be called on UI thread.</summary>
     private void CheckSystemUsageAlert()
     {
         if (_config.SystemUsageThresholdPercent <= 0) return;
@@ -417,25 +444,16 @@ public sealed class MainForm : Form
             return;
         _lastAlertTimes[SystemUsageAlertKey] = now;
 
-        if (IsDisposed || !IsHandleCreated) return;
-        BeginInvoke(() =>
-        {
-            ToastNotification.ShowToast(
-                "RAM Watchdog — System RAM High",
-                $"Total RAM usage: {currentLoad}%  (threshold: {_config.SystemUsageThresholdPercent}%)",
-                ShowWindow);
-        });
+        ToastNotification.ShowToast(
+            "RAM Watchdog — System RAM High",
+            $"Total RAM usage: {currentLoad}%  (threshold: {_config.SystemUsageThresholdPercent}%)",
+            ShowWindow);
     }
 
+    /// <summary>Shows a toast alert for a process exceeding threshold. Must be called on UI thread.</summary>
     private void FireAlert(ProcessMemoryInfo proc)
     {
-        if (IsDisposed || !IsHandleCreated) return;
-
-        // Marshal toast to UI thread so form creation works correctly
-        BeginInvoke(() =>
-        {
-            ToastNotification.ShowToast(this, proc, ShowWindow);
-        });
+        ToastNotification.ShowToast(this, proc, ShowWindow);
     }
 
     private void UpdateListView(List<ProcessMemoryInfo> snapshot)
@@ -682,6 +700,7 @@ public sealed class MainForm : Form
 
     private void ExitApp()
     {
+        _exiting = true; // signal BeginInvoke lambdas to bail out before touching disposed resources
         _monitor.Dispose();
         _trayIcon.Visible = false;
         _trayIcon.Dispose();
@@ -690,7 +709,16 @@ public sealed class MainForm : Form
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) { _monitor.Dispose(); _trayIcon.Visible = false; _trayIcon.Dispose(); _trayMenu.Dispose(); }
+        if (disposing)
+        {
+            _monitor.Dispose();
+            // Guard against double-dispose (ExitApp may have already disposed the tray icon)
+            try { _trayIcon.Visible = false; _trayIcon.Dispose(); }
+            catch (ObjectDisposedException) { }
+            _trayMenu.Dispose();
+            _appIcon.Dispose();
+            _alertIcon.Dispose();
+        }
         base.Dispose(disposing);
     }
 }

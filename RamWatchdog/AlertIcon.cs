@@ -1,4 +1,4 @@
-// AlertIcon.cs — Red alert icon generator for tray icon flash v1.0.0
+// AlertIcon.cs — Red alert icon generator for tray icon flash v1.0.1
 namespace RamWatchdog;
 
 /// <summary>
@@ -18,7 +18,10 @@ internal static class AlertIcon
         using var font = new Font("Segoe UI", 9f, FontStyle.Bold);
         using var brush = new SolidBrush(Color.White);
         g.DrawString("R", font, brush, 0, 0);
-        var icon = Icon.FromHandle(bmp.GetHicon());
-        return (Icon)icon.Clone(); // clone so icon survives bitmap disposal
+        IntPtr hIcon = bmp.GetHicon();
+        using var tempIcon = Icon.FromHandle(hIcon);
+        var result = (Icon)tempIcon.Clone();
+        MainForm.DestroyIcon(hIcon); // release the unmanaged HICON handle
+        return result;
     }
 }

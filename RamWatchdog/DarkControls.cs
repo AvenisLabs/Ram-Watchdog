@@ -1,4 +1,4 @@
-// DarkControls.cs — Dark-themed WinForms control classes for ListView and context menus v1.0.0
+// DarkControls.cs — Dark-themed WinForms control classes for ListView and context menus v1.0.2
 using System.Runtime.InteropServices;
 
 namespace RamWatchdog;
@@ -128,12 +128,19 @@ internal sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
     private static readonly Color MenuBg    = Color.FromArgb(28, 28, 28);
     private static readonly Color MenuHover = Color.FromArgb(50, 50, 50);
     private static readonly Color SepColor  = Color.FromArgb(50, 50, 50);
+    private static readonly Font CheckFont  = new("Segoe UI", 9f, FontStyle.Bold);
+
+    // ── Cached GDI objects for per-render hot paths ──
+    private static readonly SolidBrush BrushMenuBg    = new(MenuBg);
+    private static readonly SolidBrush BrushMenuHover = new(MenuHover);
+    private static readonly SolidBrush BrushCheckAccent = new(Color.FromArgb(78, 201, 110));
+    private static readonly Pen PenSep = new(SepColor);
 
     public DarkMenuRenderer() : base(new DarkColorTable()) { }
 
     protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
     {
-        using var brush = new SolidBrush(e.Item.Selected ? MenuHover : MenuBg);
+        var brush = e.Item.Selected ? BrushMenuHover : BrushMenuBg;
         e.Graphics.FillRectangle(brush, new Rectangle(Point.Empty, e.Item.Size));
     }
 
@@ -143,27 +150,21 @@ internal sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
     protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
     {
         var bounds = new Rectangle(Point.Empty, e.Item.Size);
-        using var bgBrush = new SolidBrush(MenuBg);
-        e.Graphics.FillRectangle(bgBrush, bounds);
-        using var pen = new Pen(SepColor);
-        e.Graphics.DrawLine(pen, bounds.Left + 4, bounds.Height / 2, bounds.Right - 4, bounds.Height / 2);
+        e.Graphics.FillRectangle(BrushMenuBg, bounds);
+        e.Graphics.DrawLine(PenSep, bounds.Left + 4, bounds.Height / 2, bounds.Right - 4, bounds.Height / 2);
     }
 
     protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
     {
-        using var pen = new Pen(SepColor);
-        e.Graphics.DrawRectangle(pen, 0, 0, e.AffectedBounds.Width - 1, e.AffectedBounds.Height - 1);
+        e.Graphics.DrawRectangle(PenSep, 0, 0, e.AffectedBounds.Width - 1, e.AffectedBounds.Height - 1);
     }
 
     // Render checkmark for auto-start menu item
     protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
     {
         var rect = e.ImageRectangle;
-        using var brush = new SolidBrush(MenuHover);
-        e.Graphics.FillRectangle(brush, rect);
-        using var checkFont = new Font("Segoe UI", 9f, FontStyle.Bold);
-        using var checkBrush = new SolidBrush(Color.FromArgb(78, 201, 110));
-        e.Graphics.DrawString("\u2713", checkFont, checkBrush, rect.Left - 1, rect.Top);
+        e.Graphics.FillRectangle(BrushMenuHover, rect);
+        e.Graphics.DrawString("\u2713", CheckFont, BrushCheckAccent, rect.Left - 1, rect.Top);
     }
 }
 

@@ -1,4 +1,4 @@
-// ToastNotification.cs — Custom dark-themed toast popup for RAM alerts v1.1.0
+// ToastNotification.cs — Custom dark-themed toast popup for RAM alerts v1.1.1
 namespace RamWatchdog;
 
 /// <summary>
@@ -11,6 +11,15 @@ internal sealed class ToastNotification : Form
     private const int ToastWidth = 340;
     private const int ToastHeight = 80;
     private const int AutoDismissMs = 10000;
+
+    // ── Cached GDI objects (consistent with MainForm caching pattern) ──
+    private static readonly Font TitleFont  = new("Segoe UI Semibold", 10f);
+    private static readonly Font DetailFont = new("Segoe UI", 9f);
+    private static readonly Font HintFont   = new("Segoe UI", 7.5f);
+    private static readonly SolidBrush AccentBrush = new(MainForm.AlertRed);
+    private static readonly SolidBrush DetailBrush = new(MainForm.AlertRed);
+    private static readonly SolidBrush HintBrush   = new(Color.FromArgb(140, 140, 140));
+    private static readonly Pen BorderPen = new(MainForm.BorderColor);
 
     private static ToastNotification? _current;
 
@@ -86,27 +95,11 @@ internal sealed class ToastNotification : Form
         base.OnPaint(e);
         var g = e.Graphics;
 
-        // Red left accent bar
-        using var accentBrush = new SolidBrush(MainForm.AlertRed);
-        g.FillRectangle(accentBrush, 0, 0, 4, Height);
-
-        // Border
-        using var borderPen = new Pen(MainForm.BorderColor);
-        g.DrawRectangle(borderPen, 0, 0, Width - 1, Height - 1);
-
-        // Title
-        using var titleFont = new Font("Segoe UI Semibold", 10f);
-        g.DrawString(_title, titleFont, Brushes.White, 12, 8);
-
-        // Detail
-        using var detailFont = new Font("Segoe UI", 9f);
-        using var detailBrush = new SolidBrush(MainForm.AlertRed);
-        g.DrawString(_detail, detailFont, detailBrush, 12, 34);
-
-        // Hint text
-        using var hintFont = new Font("Segoe UI", 7.5f);
-        using var hintBrush = new SolidBrush(Color.FromArgb(140, 140, 140));
-        g.DrawString("Click to open  •  auto-dismiss in 10s", hintFont, hintBrush, 12, 56);
+        g.FillRectangle(AccentBrush, 0, 0, 4, Height);              // red left accent bar
+        g.DrawRectangle(BorderPen, 0, 0, Width - 1, Height - 1);    // border
+        g.DrawString(_title, TitleFont, Brushes.White, 12, 8);      // title
+        g.DrawString(_detail, DetailFont, DetailBrush, 12, 34);     // detail
+        g.DrawString("Click to open  •  auto-dismiss in 10s", HintFont, HintBrush, 12, 56);
     }
 
     protected override void OnClick(EventArgs e)
