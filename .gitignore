@@ -1,0 +1,30 @@
+# Build output
+bin/
+obj/
+
+# User-specific / IDE files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# NuGet
+*.nupkg
+*.snupkg
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Summary log archives (daily rotations)
+summarylog_*.md
+
+# Claude Code local state
+.claude/
